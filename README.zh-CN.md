@@ -1,4 +1,4 @@
-[English](https://chatgpt.com/c/README.md) | **简体中文**
+[English](README.md) | **简体中文**
 
 # PRD Builder
 
