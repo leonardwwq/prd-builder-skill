@@ -1,0 +1,62 @@
+# spec.yaml 骨架：复制到页面目录后逐段填。
+# 必填段：meta / scope / rules / acceptance / open_questions；其余按需，用不上整段删掉。
+# 编号格式 <类型>-<页号>-<序号>，页号 = 页面目录的 NN。语义见 references/spec-schema.md
+
+meta:
+  feature: <页面名 / 流程包名，与 PRD.md 标题一致>
+  product: <产品名>
+  version: <版本号，与版本目录名一致>
+  page: <NN-页面名，与页面目录名一致>
+  date: <YYYY-MM-DD>
+  prd: PRD.md
+  status: 草稿   # 草稿 / 待评审 / 已确认 / 已交付；只有「已交付」后才冻结
+
+scope:
+  in: []
+  out: []
+
+roles:
+  - { role: <角色名>, can: [], cannot: [], source: <权限来源> }
+
+entities:
+  - name: <实体名>
+    key: <实体 key>
+    fields:
+      - { key: <key>, label: <字段名>, type: <string|text|int|decimal|enum|date|datetime|bool|ref|list>, required: true, rule: <R 编号或说明> }
+
+flows:
+  - entity: <实体名>
+    states: []
+    initial: <初始状态>
+    transitions:
+      - { from: <状态>, action: <动作>, actor: <角色>, to: <状态>, guard: <前置条件> }
+    reverse: []
+
+refs:
+  - { page: <NN-页面名>, entity: <实体名>, ids: [], uses: <本页触发哪些流转 / 遵守哪些规则> }
+
+rules:
+  - { id: R-NN-001, text: <一条可测的规则> }
+
+apis:
+  - { id: A-001, name: <接口名>, method: <GET|POST|PUT|DELETE>, path: <路径>, auth: <是/否>, req: {}, resp: {}, errors: [] }
+
+notifications:
+  - { event: <触发事件>, to: [], channel: <渠道>, template: <文案> }
+
+nonfunctional:
+  perf: []
+  security: []
+  audit: []
+
+acceptance:
+  - { id: G-NN-001, given: <前置数据>, when: <操作>, then: <期望结果> }
+
+tasks:
+  - { id: T-NN-001, title: <实现任务>, depends_on: [], done_when: <完成判据> }
+
+decisions:
+  - { id: D-NN-01, point: <决策点>, conclusion: <结论>, impact: <影响面>, status: <已定 / 由我代定> }
+
+open_questions: []
+  # - { id: Q-NN-01, question: <问题>, owner: <需谁回答>, blocks: <T 编号或 —>, due: <YYYY-MM-DD 或 —> }

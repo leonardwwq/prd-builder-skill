@@ -1,0 +1,37 @@
+# ⚠️ 虚构示例：仅演示 spec.yaml 的写法（含跨页引用 refs），不是真实需求，不构成任何业务规则，禁止照搬。
+
+meta:
+  feature: 反馈处理
+  product: 示例应用
+  version: v1.0
+  page: 02-反馈处理
+  date: 2026-01-15
+  prd: PRD.md
+  status: 已确认
+
+scope:
+  in: [反馈列表, 领取, 回复并完成, 退回]
+  out: [批量操作, 导出]
+
+roles:
+  - { role: 运营, can: [查看列表, 领取, 回复, 退回], cannot: [删除反馈], source: 后台角色 }
+
+refs:
+  - { page: 01-提交反馈, entity: 反馈, ids: [R-01-003], uses: 本页触发 领取、回复并完成、退回 三个流转 }
+
+rules:
+  - { id: R-02-001, text: 列表默认按提交时间倒序，每页 20 条 }
+  - { id: R-02-002, text: 一条反馈同一时间只能被一名运营领取，已被他人领取时领取按钮置灰并显示领取人 }
+  - { id: R-02-003, text: 回复内容 1 到 1000 字，为空时完成按钮不可点 }
+
+
+acceptance:
+  - { id: G-02-001, given: 存在 1 条待处理反馈, when: 运营 A 点领取, then: 状态变为处理中，领取人显示运营 A }
+  - { id: G-02-002, given: 反馈已被运营 A 领取, when: 运营 B 打开列表, then: 该条领取按钮置灰并显示「运营 A 处理中」 }
+
+tasks:
+  - { id: T-02-001, title: 列表与领取、回复、退回接口, depends_on: [T-01-001], done_when: 状态流转与 01-提交反馈 状态机一致 }
+  - { id: T-02-002, title: 后台反馈处理页, depends_on: [T-02-001], done_when: G-02-001 与 G-02-002 验收通过 }
+
+open_questions:
+  - { id: Q-02-01, question: 回复后是否需要通知用户, owner: 产品, blocks: —, due: — }

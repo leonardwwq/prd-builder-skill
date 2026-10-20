@@ -1,0 +1,56 @@
+# ⚠️ 虚构示例：仅演示 spec.yaml 的写法，不是真实需求，不构成任何业务规则，禁止照搬。
+
+meta:
+  feature: 提交反馈
+  product: 示例应用
+  version: v1.0
+  page: 01-提交反馈
+  date: 2026-01-15
+  prd: PRD.md
+  status: 已确认
+
+scope:
+  in: [反馈提交表单, 提交校验, 反馈实体与状态机定义]
+  out: [附件上传, 匿名提交, 用户查看处理进度]
+
+roles:
+  - { role: 用户, can: [提交反馈], cannot: [修改已提交反馈], source: 已登录账号 }
+
+entities:
+  - name: 反馈
+    key: feedback
+    fields:
+      - { key: feedback_id, label: 反馈ID, type: string, required: true, generated: true, rule: 唯一主键 }
+      - { key: category, label: 反馈类型, type: enum, required: true, enum: [问题, 建议], default: 问题 }
+      - { key: content, label: 反馈内容, type: text, required: true, min: 10, max: 500, rule: R-01-001 }
+      - { key: status, label: 状态, type: enum, required: true, enum: [待处理, 处理中, 已回复], default: 待处理, rule: R-01-003 }
+      - { key: created_at, label: 提交时间, type: datetime, required: true, tz: Asia/Shanghai, generated: true }
+
+flows:
+  - entity: 反馈
+    states: [待处理, 处理中, 已回复]
+    initial: 待处理
+    transitions:
+      - { from: 待处理, action: 领取, actor: 运营, to: 处理中, guard: 无 }
+      - { from: 处理中, action: 回复并完成, actor: 运营, to: 已回复, guard: 回复内容非空 }
+    reverse:
+      - { action: 退回, actor: 运营, allowed_from: [处理中], note: 回到待处理，清空领取人 }
+
+rules:
+  - { id: R-01-001, text: 反馈内容 10 到 500 字，不足或超出时不发起提交并在输入框下方提示 }
+  - { id: R-01-002, text: 同一用户 3 秒内重复点击提交只生成 1 条反馈 }
+  - { id: R-01-003, text: 反馈状态只有 待处理、处理中、已回复 三种，提交成功时为待处理 }
+
+
+acceptance:
+  - { id: G-01-001, given: 用户已登录, when: 选择类型并填写 20 字内容后提交, then: 提示「提交成功」，生成 1 条状态为待处理的反馈 }
+  - { id: G-01-002, given: 用户已登录, when: 填写 5 字内容后点提交, then: 不发起请求，输入框下方提示「请输入 10 到 500 字」 }
+
+tasks:
+  - { id: T-01-001, title: 反馈表与提交接口, depends_on: [], done_when: 接口按 R-01-001 与 R-01-002 校验 }
+  - { id: T-01-002, title: 反馈提交页, depends_on: [T-01-001], done_when: G-01-001 与 G-01-002 验收通过 }
+
+decisions:
+  - { id: D-01-01, point: 反馈状态机放在哪一页定义, conclusion: 由提交页定义，处理页引用, impact: 02-反馈处理, status: 已定 }
+
+open_questions: []
