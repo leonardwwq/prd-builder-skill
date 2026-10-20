@@ -5,6 +5,7 @@
  * 用法：
  *   node build_review.mjs <页面目录>   # 只生成这一页
  *   node build_review.mjs <版本目录>   # 生成版本下所有 NN-* 页面
+ *   node build_review.mjs <独立 PRD 目录> # 不在版本目录下、直接含 PRD.md 的目录
  *
  * 依赖：零。Node 18+。
  * 说明：mock 以 iframe srcdoc 内联，review.html 是单文件，发给别人也不会掉图。
@@ -21,7 +22,7 @@ if (!target) {
 }
 const { versionDir, pages } = resolveTarget(target);
 if (!pages.length) {
-  console.error(`✗ ${path.resolve(target)} 既不是页面目录，下面也没有 NN-<页面名> 页面目录`);
+  console.error(`✗ ${path.resolve(target)} 既不是页面目录 / 独立 PRD 目录（含 PRD.md），下面也没有 NN-<页面名> 页面目录`);
   process.exit(2);
 }
 const index = pageIndex(versionDir);
@@ -74,6 +75,7 @@ function buildPage(root) {
     return html.replace(/\b([RGTDQ])-(\d{2})-(\d{2,3})\b/g, (m, _t, no) => {
       if (no === ownNo) return m;
       if (no === '00') {
+        if (!versionDir) return m;
         // 版本级决策 → 链到版本总纲 index.md
         const href = relPosix(root, path.join(versionDir, 'index.md'));
         return `<a class="xref" href="${escAttr(href)}" title="版本总纲 · 版本级决策">${m}</a>`;
@@ -264,7 +266,7 @@ function buildPage(root) {
   const meta = {
     feature: metaField('feature') || pageName,
     product: metaField('product'),
-    version: metaField('version') || path.basename(versionDir),
+    version: metaField('version') || (versionDir ? path.basename(versionDir) : '—'),
     page: metaField('page') || pageName,
     date: metaField('date'),
     status: metaField('status') || '草稿',
@@ -281,8 +283,9 @@ function buildPage(root) {
     mentionedIds(md).filter((x) => x.page === ownNo && /^[RG]$/.test(x.type)).map((x) => x.id)
   );
   const specOwn = [...defs].filter((x) => /^[RG]-/.test(x) && x.split('-')[1] === ownNo);
-  const onlyPrd = [...prdOwn].filter((x) => !defs.has(x));
-  const onlySpec = specOwn.filter((x) => !prdOwn.has(x));
+  // 没有 spec.yaml（独立 PRD）时不做交叉提示
+  const onlyPrd = specText ? [...prdOwn].filter((x) => !defs.has(x)) : [];
+  const onlySpec = specText ? specOwn.filter((x) => !prdOwn.has(x)) : [];
 
   /* ---- 输出 ---- */
   const tocHtml = toc

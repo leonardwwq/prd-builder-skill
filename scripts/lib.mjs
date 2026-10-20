@@ -13,13 +13,13 @@ export const OLD_ID_RE = /\b[RGTDQ]-\d{2,3}\b(?!-\d)/g;
 
 export const read = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null);
 
-export const isPageDir = (d) =>
-  PAGE_DIR_RE.test(path.basename(d)) &&
-  (fs.existsSync(path.join(d, 'PRD.md')) || fs.existsSync(path.join(d, 'spec.yaml')));
+const hasDoc = (d) => fs.existsSync(path.join(d, 'PRD.md')) || fs.existsSync(path.join(d, 'spec.yaml'));
+
+export const isPageDir = (d) => PAGE_DIR_RE.test(path.basename(d)) && hasDoc(d);
 
 /** 版本目录下所有 NN-* 子目录 */
 export function listPageDirs(versionDir) {
-  if (!fs.existsSync(versionDir)) return [];
+  if (!versionDir || !fs.existsSync(versionDir)) return [];
   return fs
     .readdirSync(versionDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && PAGE_DIR_RE.test(e.name))
@@ -28,17 +28,33 @@ export function listPageDirs(versionDir) {
 }
 
 /**
- * 解析传入路径：页面目录 → 只处理这一页；否则视为版本目录 → 处理其下所有页面。
+ * 解析传入路径：
+ * - NN-<页面名> 页面目录 → 只处理这一页（mode: page，所在目录视为版本目录）；
+ * - 不带页号、直接含 PRD.md / spec.yaml、下面也没有 NN-* 页面的目录 → 独立 PRD（mode: standalone，无版本目录）；
+ * - 否则视为版本目录 → 处理其下所有页面（mode: version）。
  */
 export function resolveTarget(target) {
   const root = path.resolve(target);
   if (isPageDir(root)) {
     return { mode: 'page', versionDir: path.dirname(root), pages: [root] };
   }
-  return { mode: 'version', versionDir: root, pages: listPageDirs(root) };
+  const pages = listPageDirs(root);
+  if (!pages.length && hasDoc(root)) {
+    return { mode: 'standalone', versionDir: null, pages: [root] };
+  }
+  return { mode: 'version', versionDir: root, pages };
 }
 
-export const pageNo = (dir) => (path.basename(dir).match(PAGE_DIR_RE) || [])[1];
+/** 页号：取目录名 NN；独立 PRD 目录取 spec / PRD 里定义最多的页号，默认 01 */
+export const pageNo = (dir) => {
+  const m = path.basename(dir).match(PAGE_DIR_RE);
+  if (m) return m[1];
+  const spec = read(path.join(dir, 'spec.yaml'));
+  const src = spec ? definedIds(spec).map((id) => id.split('-')[1]) : mentionedIds(read(path.join(dir, 'PRD.md')) || '').filter((x) => /^[RG]$/.test(x.type)).map((x) => x.page);
+  const count = {};
+  for (const no of src) count[no] = (count[no] || 0) + 1;
+  return Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0] || '01';
+};
 
 /** 去掉 YAML 注释行（整行以 # 开头），避免注释里的示例被当成内容 */
 export const stripYamlComments = (s) =>

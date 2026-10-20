@@ -28,6 +28,7 @@ rules:
 acceptance:
   - { id: G-02-001, given: 存在 1 条待处理反馈, when: 运营 A 点领取, then: 状态变为处理中，领取人显示运营 A }
   - { id: G-02-002, given: 反馈已被运营 A 领取, when: 运营 B 打开列表, then: 该条领取按钮置灰并显示「运营 A 处理中」 }
+  - { id: G-02-003, given: 运营 A 已领取 1 条反馈, when: 回复框留空, then: 完成按钮不可点 }
 
 tasks:
   - { id: T-02-001, title: 列表与领取、回复、退回接口, depends_on: [T-01-001], done_when: 状态流转与 01-提交反馈 状态机一致 }

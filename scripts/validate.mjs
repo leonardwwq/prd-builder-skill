@@ -5,6 +5,7 @@
  * 用法：
  *   node validate.mjs <页面目录>   # 检查单页（同时做所在版本目录的版本级检查）
  *   node validate.mjs <版本目录>   # 检查版本下所有 NN-* 页面 + 版本级检查
+ *   node validate.mjs <独立 PRD 目录> # 不在版本目录下、直接含 PRD.md 的目录：只做本目录检查（spec.yaml 可选）
  *
  * 依赖：零。Node 18+。
  */
@@ -23,16 +24,19 @@ if (!target) {
 }
 
 const { mode, versionDir, pages } = resolveTarget(target);
-const version = path.basename(versionDir);
+const standalone = mode === 'standalone';
+const version = standalone ? null : path.basename(versionDir);
 const index = pageIndex(versionDir);
-const indexText = read(path.join(versionDir, 'index.md')) || '';
+const indexText = standalone ? '' : read(path.join(versionDir, 'index.md')) || '';
 const versionDecisions = versionDecisionIds(indexText);
 const versionDecisionSet = new Set(versionDecisions);
-/* 术语表：版本 index + 工作区根 readme（versions/<版本号>/ → 上两级；老结构 <版本号>/ → 上一级） */
-const workspaceRoot = path.basename(path.dirname(versionDir)) === 'versions'
-  ? path.dirname(path.dirname(versionDir))
-  : path.dirname(versionDir);
-const glossary = [
+/* 术语表：版本 index + 工作区根 readme（versions/<版本号>/ → 上两级；老结构 <版本号>/ → 上一级）；独立目录不查 */
+const workspaceRoot = standalone
+  ? null
+  : path.basename(path.dirname(versionDir)) === 'versions'
+    ? path.dirname(path.dirname(versionDir))
+    : path.dirname(versionDir);
+const glossary = standalone ? [] : [
   ...parseGlossary(indexText),
   ...parseGlossary(read(path.join(workspaceRoot, 'readme.md')) || ''),
 ];
@@ -44,8 +48,8 @@ let totalErr = 0;
 let totalWarn = 0;
 const blocks = [];
 
-/* ================= 版本级检查 ================= */
-{
+/* ================= 版本级检查（独立 PRD 目录跳过） ================= */
+if (!standalone) {
   const errors = [];
   const warns = [];
   const oks = [];
@@ -134,6 +138,10 @@ function checkRefs(ids, ownNo) {
   for (const id of new Set(ids)) {
     const no = id.split('-')[1];
     if (no === ownNo) continue;
+    if (standalone) {
+      bad.push(`${id}（独立 PRD 目录不能跨页 / 引用版本级编号；并入项目工作区后再引用）`);
+      continue;
+    }
     if (no === '00') {
       if (!id.startsWith('D-')) bad.push(`${id}（00 号只有 D-00 可被页面引用；Q-00 留在版本 WORKLOG，定了再引用 D-00 或本页编号）`);
       else if (!versionDecisionSet.has(id)) bad.push(`${id}（版本 index.md「版本级决策」里没有）`);
@@ -197,9 +205,14 @@ function checkPage(root) {
   }
 
   if (!prd) errors.push('缺 PRD.md');
-  if (!spec) errors.push('缺 spec.yaml');
-  if (!prd || !spec) return res;
-  oks.push('PRD.md、spec.yaml 存在');
+  if (!spec && !standalone) errors.push('缺 spec.yaml（项目模式每页必有）');
+  if (!prd || (!spec && !standalone)) return res;
+  if (spec) oks.push('PRD.md、spec.yaml 存在');
+  else {
+    oks.push('独立 PRD（无 spec.yaml）：只做 PRD 检查');
+    checkPrd(prd, root, no, errors, warns, oks, null);
+    return res;
+  }
 
   /* ---- spec 结构 ---- */
   const S = yamlSections(spec);
@@ -217,13 +230,15 @@ function checkPage(root) {
     const m = (S.get('meta') || '').match(new RegExp(`^\\s*${k}:\\s*(.+)$`, 'm'));
     return m ? m[1].replace(/#.*$/, '').replace(/["']/g, '').trim() : '';
   };
-  const v = metaField('version');
-  if (!v) errors.push('spec.yaml → meta.version 缺失');
-  else if (v !== version) errors.push(`meta.version（${v}）与版本目录名（${version}）不一致`);
-  else oks.push(`版本号与目录名一致：${version}`);
-  const pg = metaField('page');
-  if (!pg) warns.push('spec.yaml → meta.page 缺失，建议写成页面目录名');
-  else if (pg !== name) errors.push(`meta.page（${pg}）与页面目录名（${name}）不一致`);
+  if (!standalone) {
+    const v = metaField('version');
+    if (!v) errors.push('spec.yaml → meta.version 缺失');
+    else if (v !== version) errors.push(`meta.version（${v}）与版本目录名（${version}）不一致`);
+    else oks.push(`版本号与目录名一致：${version}`);
+    const pg = metaField('page');
+    if (!pg) warns.push('spec.yaml → meta.page 缺失，建议写成页面目录名');
+    else if (pg !== name) errors.push(`meta.page（${pg}）与页面目录名（${name}）不一致`);
+  } else oks.push(`独立 PRD 目录：跳过版本目录 / 页面目录名核对，页号按 ${no}`);
 
   const isEmpty = (seg) => {
     const body = S.get(seg);
@@ -311,18 +326,35 @@ function checkPage(root) {
   Object.keys(edges).forEach((id) => dfs(id, []));
   if (Object.keys(edges).length) oks.push(`实现任务 ${Object.keys(edges).length} 条，依赖可解析`);
 
-  /* ---- PRD 结构 ---- */
-  let h2 = '';
-  const h2s = [];
-  const blocksIn = [];
-  for (const m of prd.matchAll(/^(#{1,6})\s+(.+)$/gm)) {
-    if (m[1].length === 2) { h2 = m[2].trim(); h2s.push(h2); }
-    if (m[1].length === 3 && /详细需求/.test(h2)) blocksIn.push(m[2].trim());
+  checkPrd(prd, root, no, errors, warns, oks, spec);
+  return res;
+}
+
+/** PRD.md 及其 mock、术语、review 检查；spec 为 null 时（独立 PRD）额外做编号格式与 R/G 存在性检查 */
+function checkPrd(prd, root, no, errors, warns, oks, spec) {
+  const specPath = path.join(root, 'spec.yaml');
+  const reviewPath = path.join(root, 'review.html');
+  const prdPath = path.join(root, 'PRD.md');
+
+  if (!spec) {
+    const oldIds = [...new Set(prd.match(OLD_ID_RE) || [])];
+    if (oldIds.length) errors.push(`发现不带页号的旧格式编号，应改为 <类型>-${no}-<序号>：${oldIds.slice(0, 8).join('、')}`);
+    const ms = mentionedIds(prd);
+    const own = ms.filter((m) => m.page === no);
+    const R = new Set(own.filter((m) => m.type === 'R').map((m) => m.id));
+    const G = new Set(own.filter((m) => m.type === 'G').map((m) => m.id));
+    if (!R.size) warns.push(`PRD.md 没有业务规则编号（R-${no}-001…）：规则不编号，验收就没法指向它`);
+    if (!G.size) warns.push(`PRD.md 没有验收标准编号（G-${no}-001…）`);
+    if (R.size && G.size) oks.push(`编号：R ${R.size} 个、G ${G.size} 个`);
+    const badCross = checkRefs(ms.filter((m) => m.page !== no).map((m) => m.id), no);
+    if (badCross.length) errors.push(`跨页引用对不上：${badCross.join('、')}`);
+    if (!/不包含|不做|不在本次|范围外/.test(prd)) warns.push('PRD.md 没写「不包含 / 不做」：范围容易越界');
   }
-  if (!h2s.some((t) => /整体概述/.test(t))) errors.push('PRD.md 缺「整体概述」章节');
-  if (!h2s.some((t) => /详细需求/.test(t))) errors.push('PRD.md 缺「详细需求」章节');
-  else if (!blocksIn.length) errors.push('PRD.md「详细需求」下没有任何区块（### 级标题）');
-  else oks.push(`PRD.md 结构完整，区块 ${blocksIn.length} 个：${blocksIn.join('、')}`);
+
+  /* ---- PRD 结构：不强制固定章节，只要求有二级标题、代码块闭合 ---- */
+  const h2s = [...prd.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1].trim());
+  if (!h2s.length) errors.push('PRD.md 没有任何二级标题（## ），结构无法定位');
+  else oks.push(`PRD.md 章节 ${h2s.length} 个：${h2s.slice(0, 8).join('、')}${h2s.length > 8 ? ' …' : ''}`);
   if ((prd.match(/^```/gm) || []).length % 2) errors.push('PRD.md 代码块 ``` 没闭合');
 
   const filler = ['优化体验', '提升效率', '友好的提示', '友好提示', '体验更好', '性能优化', '功能正常', '尽量', '等等'];
@@ -358,7 +390,7 @@ function checkPage(root) {
 
   /* ---- 术语：禁用别名 ---- */
   if (aliasMap.size) {
-    const files = [['PRD.md', prd], ['spec.yaml', spec], ...mockFiles.map((f) => [path.relative(root, f), fs.readFileSync(f, 'utf8')])];
+    const files = [['PRD.md', prd], ...(spec ? [['spec.yaml', spec]] : []), ...mockFiles.map((f) => [path.relative(root, f), fs.readFileSync(f, 'utf8')])];
     const hits = [];
     for (const [rel, body] of files) {
       body.split('\n').forEach((line, i) => {
@@ -375,7 +407,7 @@ function checkPage(root) {
 
   /* ---- review.html ---- */
   if (!fs.existsSync(reviewPath)) {
-    warns.push('还没有 review.html，跑一下 build_review.mjs');
+    if (!standalone || mockFiles.length) warns.push('还没有 review.html，跑一下 build_review.mjs');
   } else {
     const rt = fs.statSync(reviewPath).mtimeMs;
     const newer = [prdPath, specPath, ...markerAbs]
@@ -385,5 +417,4 @@ function checkPage(root) {
     else oks.push('review.html 是最新的');
   }
 
-  return res;
 }
