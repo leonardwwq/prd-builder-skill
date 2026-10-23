@@ -101,7 +101,11 @@ if (!standalone) {
   const wl = path.join(versionDir, 'WORKLOG.md');
   if (fs.existsSync(wl)) {
     const g = gitStatus(versionDir, 'WORKLOG.md');
-    if (g === 'tracked') errors.push('WORKLOG.md 已被 Git 跟踪：它不进 Git，需从仓库移除并加入 .gitignore（先征得用户同意）');
+    if (isExampleWorkspace(versionDir)) {
+      if (g === 'tracked') warns.push('示例工作区：WORKLOG.md 入库仅为演示格式；真实工作区应加进 .gitignore');
+      else oks.push('示例工作区：WORKLOG.md 未入库');
+    }
+    else if (g === 'tracked') errors.push('WORKLOG.md 已被 Git 跟踪：它不进 Git，需从仓库移除并加入 .gitignore（先征得用户同意）');
     else if (g === 'not-ignored') errors.push('WORKLOG.md 在 Git 仓库里但没被忽略：建议在 .gitignore 加一行 WORKLOG.md（先征得用户同意）');
     else if (g === 'ignored') oks.push('WORKLOG.md 已被 Git 忽略');
     else oks.push('不在 Git 仓库内，跳过 WORKLOG 入库检查');
@@ -172,6 +176,11 @@ function gitStatus(cwd, rel) {
   }
 }
 
+/** 技能自带的示例工作区（example/ 下）：WORKLOG 入库只为演示格式，不按真实工作区的规矩报错 */
+function isExampleWorkspace(dir) {
+  return path.resolve(dir).split(path.sep).includes('example');
+}
+
 function walkHtml(dir) {
   if (!fs.existsSync(dir)) return [];
   const out = [];
@@ -200,7 +209,10 @@ function checkPage(root) {
   const pwl = path.join(root, 'WORKLOG.md');
   if (fs.existsSync(pwl)) {
     const g = gitStatus(root, 'WORKLOG.md');
-    if (g === 'tracked') errors.push('本页 WORKLOG.md 已被 Git 跟踪：它不进 Git，需从仓库移除并加入 .gitignore（先征得用户同意）');
+    if (isExampleWorkspace(root)) {
+      if (g === 'tracked') warns.push('示例工作区：本页 WORKLOG.md 入库仅为演示格式；真实工作区应加进 .gitignore');
+    }
+    else if (g === 'tracked') errors.push('本页 WORKLOG.md 已被 Git 跟踪：它不进 Git，需从仓库移除并加入 .gitignore（先征得用户同意）');
     else if (g === 'not-ignored') errors.push('本页 WORKLOG.md 在 Git 仓库里但没被忽略：建议 .gitignore 加一行 WORKLOG.md（先征得用户同意）');
   }
 
